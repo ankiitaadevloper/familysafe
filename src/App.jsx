@@ -68,20 +68,28 @@ const HOME = { lat: 18.5204, lng: 73.8567 }
 const MUMBAI = { lat: 19.0760, lng: 72.8777 }
 const LONAVALA = { lat: 18.7546, lng: 73.4082 }
 
-const initialMembers = [
-  { id:'me', name:'You', role:'Self', avatar:'avatar-me', initial:'Y', status:'safe', speed:0, location:HOME, distance:0, lastUpdate:'At home', isDriving:false, battery:87, online:true, email:'you@familysafe.app' },
-  { id:'mom', name:'Aai', role:'Mother', avatar:'avatar-mom', initial:'A', status:'safe', speed:0, location:HOME, distance:0, lastUpdate:'At home', isDriving:false, battery:64, online:true, email:'aai@familysafe.app' },
-  { id:'dad', name:'Baba', role:'Father', avatar:'avatar-dad', initial:'B', status:'driving', speed:52, location:{lat:18.5314,lng:73.8447}, distance:2.4, lastUpdate:'12 sec ago', isDriving:true, battery:73, online:true, email:'baba@familysafe.app', routeFrom:'Home', routeTo:'Office — Hinjewadi', eta:'10:45 AM', tripDistance:12.4, topSpeed:64, duration:'00:18' },
-  { id:'sis', name:'Priya', role:'Sister', avatar:'avatar-sis', initial:'P', status:'safe', speed:0, location:{lat:18.5104,lng:73.8467}, distance:1.8, lastUpdate:'At college', isDriving:false, battery:45, online:true, email:'priya@familysafe.app' },
-  { id:'bro', name:'Rohan', role:'Brother', avatar:'avatar-bro', initial:'R', status:'driving', speed:68, location:{lat:18.7546,lng:73.4082}, distance:52.3, lastUpdate:'8 sec ago', isDriving:true, battery:58, online:true, email:'rohan@familysafe.app', routeFrom:'Mumbai', routeTo:'Pune', eta:'12:30 PM', tripDistance:68.2, topSpeed:92, duration:'01:24' },
-]
+// Generate a random invite code
+const generateInviteCode = () => {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
+  let code = 'FAM-'
+  for (let i = 0; i < 4; i++) {
+    code += chars.charAt(Math.floor(Math.random() * chars.length))
+  }
+  return code
+}
 
-const initialAlerts = [
-  { id:'a1', memberId:'bro', severity:'warn', type:'Overspeed Alert', title:'Rohan was driving fast', time:'8 min ago', speed:'92 km/h', location:'Mumbai-Pune Expressway', desc:'Speed exceeded 80 km/h limit on the expressway.' },
-  { id:'a2', memberId:'dad', severity:'safe', type:'Trip Started', title:'Baba started driving', time:'18 min ago', speed:'0 km/h', location:'Home — Kothrud', desc:'Baba began a new trip toward Hinjewadi office.' },
-  { id:'a3', memberId:'sis', severity:'warn', type:'Long Inactivity', title:'Priya is stationary', time:'2 hrs ago', speed:'0 km/h', location:'Symbiosis Campus', desc:'No movement detected for 2+ hours.' },
-  { id:'a4', memberId:'mom', severity:'safe', type:'Arrived Home', title:'Aai reached home safely', time:'Yesterday, 7:42 PM', speed:'0 km/h', location:'Home — Kothrud', desc:'Trip completed successfully.' },
-]
+// Get avatar color based on index
+const getAvatar = (index) => {
+  const avatars = ['avatar-mom','avatar-dad','avatar-sis','avatar-bro','avatar-me']
+  return avatars[index % avatars.length]
+}
+
+// Get initial from name
+const getInitial = (name) => name ? name.charAt(0).toUpperCase() : '?'
+
+const initialMembers = []
+
+const initialAlerts = []
 
 const haversine = (a, b) => {
   const R = 6371, dLat = (b.lat-a.lat)*Math.PI/180, dLon = (b.lng-a.lng)*Math.PI/180
@@ -101,6 +109,97 @@ const S = {
 
 // ===== SPLASH =====
 
+// ===== JOIN FAMILY =====
+const JoinFamily = ({ currentUser, onJoined, onSkip }) => {
+  const [code, setCode] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
+
+  const joinFamily = async () => {
+    if (!code.trim()) { setError('Please enter an invite code'); return }
+    setLoading(true)
+    setError('')
+    try {
+      const { getDocs, query, where } = await import('firebase/firestore')
+      const q = query(collection(db, 'families'), where('inviteCode', '==', code.trim().toUpperCase()))
+      const snapshot = await getDocs(q)
+      if (snapshot.empty) {
+        setError('Invalid invite code. Please check and try again.')
+        setLoading(false)
+        return
+      }
+      const familyDoc = snapshot.docs[0]
+      const familyId = familyDoc.id
+      const familyData = familyDoc.data()
+      const currentMembers = familyData.members || []
+      if (currentMembers.includes(auth.currentUser.uid)) {
+        setError('You are already in this family!')
+        setLoading(false)
+        return
+      }
+      await setDoc(doc(db, 'families', familyId), {
+        ...familyData,
+        members: [...currentMembers, auth.currentUser.uid]
+      })
+      await setDoc(doc(db, 'users', auth.currentUser.uid), {
+        ...currentUser,
+        familyId: familyId
+      })
+      onJoined(code)
+    } catch (err) {
+      setError('Something went wrong. Please try again.')
+      console.error(err)
+    }
+    setLoading(false)
+  }
+
+  return (
+    <div style={{ minHeight:'100vh', display:'flex', flexDirection:'column', padding:'32px 24px', background:'#0a0e1a' }}>
+      <div style={{ marginTop:60, marginBottom:40 }}>
+        <div style={{ fontSize:48, marginBottom:20, textAlign:'center' }}>👨‍👩‍👧‍👦</div>
+        <h1 style={{ fontFamily:'Fraunces, serif', fontSize:36, fontWeight:600, letterSpacing:'-0.03em', textAlign:'center', marginBottom:12 }}>
+          Join your family
+        </h1>
+        <p style={{ color:'#a4a8b8', fontSize:15, lineHeight:1.5, textAlign:'center' }}>
+          Enter the invite code shared by your family member to connect and track each other safely.
+        </p>
+      </div>
+
+      <div style={{ background:'rgba(31,38,64,0.55)', backdropFilter:'blur(20px)', border:'1px solid rgba(255,255,255,0.08)', borderRadius:20, padding:24, marginBottom:20 }}>
+        <div style={{ fontFamily:'Geist Mono, monospace', fontSize:10, textTransform:'uppercase', letterSpacing:'0.1em', color:'#6b7088', marginBottom:8 }}>Invite Code</div>
+        <input
+          value={code}
+          onChange={e => setCode(e.target.value.toUpperCase())}
+          placeholder="e.g. FAM-X7K2"
+          style={{ width:'100%', padding:'16px 18px', background:'rgba(255,255,255,0.05)', border:'1px solid rgba(255,255,255,0.12)', borderRadius:12, color:'#f5f5f0', fontFamily:'Geist Mono, monospace', fontSize:20, letterSpacing:'0.15em', outline:'none', textAlign:'center' }}
+        />
+        {error && (
+          <div style={{ marginTop:10, padding:'10px 14px', background:'rgba(255,94,108,0.1)', border:'1px solid rgba(255,94,108,0.3)', borderRadius:10, fontSize:13, color:'#ff5e6c', textAlign:'center' }}>
+            {error}
+          </div>
+        )}
+      </div>
+
+      <button onClick={joinFamily} style={{ width:'100%', padding:18, borderRadius:14, background: loading ? '#ccc' : '#f5f5f0', color:'#0a0e1a', border:'none', fontFamily:'inherit', fontSize:15, fontWeight:600, cursor: loading ? 'not-allowed' : 'pointer', marginBottom:12 }}>
+        {loading ? '⏳ Joining...' : 'Join Family'}
+      </button>
+
+      <button onClick={onSkip} style={{ width:'100%', padding:16, borderRadius:14, background:'transparent', border:'1px solid rgba(255,255,255,0.12)', color:'#a4a8b8', fontFamily:'inherit', fontSize:14, fontWeight:500, cursor:'pointer' }}>
+        Skip — I'll join later
+      </button>
+
+      <div style={{ marginTop:'auto', padding:'20px 0', textAlign:'center' }}>
+        <div style={{ fontFamily:'Geist Mono, monospace', fontSize:10, textTransform:'uppercase', letterSpacing:'0.08em', color:'#6b7088', marginBottom:8 }}>Your invite code to share</div>
+        <div style={{ fontFamily:'Geist Mono, monospace', fontSize:22, fontWeight:700, color:'#d4a574', letterSpacing:'0.2em' }}>
+          {currentUser?.inviteCode || 'Loading...'}
+        </div>
+        <div style={{ fontSize:12, color:'#6b7088', marginTop:6 }}>Share this with family members so they can join you</div>
+      </div>
+    </div>
+  )
+}
+
+// ===== SPLASH =====
   const Splash = ({ onContinue }) => {
   const [mode, setMode] = useState('login')
   const [email, setEmail] = useState('')
@@ -172,13 +271,24 @@ const S = {
             try {
               if (mode === 'signup') {
                 const cred = await createUserWithEmailAndPassword(auth, email, pass)
-                await setDoc(doc(db, 'users', cred.user.uid),
-                {
+                const newCode = generateInviteCode()
+                const newFamilyId = cred.user.uid
+                // Save user profile
+                await setDoc(doc(db, 'users', cred.user.uid), {
                   name: name || 'Family Member',
                   email: email,
                   uid: cred.user.uid,
                   createdAt: serverTimestamp(),
-                  familyId: null
+                  familyId: newFamilyId,
+                  inviteCode: newCode
+                })
+                // Create their family group
+                await setDoc(doc(db, 'families', newFamilyId), {
+                  ownerId: cred.user.uid,
+                  ownerName: name || 'Family Member',
+                  inviteCode: newCode,
+                  members: [cred.user.uid],
+                  createdAt: serverTimestamp()
                 })
               } else {
                 await signInWithEmailAndPassword(auth, email, pass)
@@ -454,7 +564,7 @@ const AlertsScreen = ({ alerts, members, onDismissAlert }) => (
 )
 
 // ===== SETTINGS SCREEN =====
-const SettingsScreen = ({ members, onRemoveMember, onLogout }) => {
+const SettingsScreen = ({ members, inviteCode, currentUser, onRemoveMember, onJoinFamily, onLogout }) => {
   const [notifSpeed, setNotifSpeed] = useState(true)
   const [notifAccident, setNotifAccident] = useState(true)
   const [notifTrips, setNotifTrips] = useState(false)
@@ -475,13 +585,16 @@ const SettingsScreen = ({ members, onRemoveMember, onLogout }) => {
       </div>
 
       {/* Profile */}
-      <div style={{ margin:'0 20px 24px', ...S.glass, borderRadius:22, padding:24, display:'flex', alignItems:'center', gap:16 }}>
-        <div style={{ width:64, height:64, borderRadius:'50%', background:'linear-gradient(135deg,#b6f9d9,#70e8a5)', display:'flex', alignItems:'center', justifyContent:'center', fontWeight:600, fontSize:26, color:'#0a0e1a', flexShrink:0 }}>Y</div>
-        <div style={{ flex:1, minWidth:0 }}>
-          <div style={{ fontFamily:'Fraunces, serif', fontSize:20, fontWeight:600, marginBottom:2 }}>You</div>
-          <div style={{ fontSize:13, color:'#a4a8b8' }}>you@familysafe.app</div>
-        </div>
-      </div>
+      <div style={{ display:'flex', alignItems:'center', gap:14, padding:'14px 16px', cursor:'pointer' }}>
+            <div style={{ width:34, height:34, borderRadius:10, background:'#1a2033', display:'flex', alignItems:'center', justifyContent:'center', color:'#5eddb4', flexShrink:0 }}>
+              <Icon name="plus" size={16}/>
+            </div>
+            <div style={{ flex:1 }}>
+              <div style={{ fontSize:14, fontWeight:500 }}>Add via email</div>
+              <div style={{ fontSize:12, color:'#6b7088' }}>Send an invitation</div>
+            </div>
+            <Icon name="chevron" size={16}/>
+          </div>
 
       {/* Notifications */}
       <div style={{ padding:'0 20px', marginBottom:24 }}>
@@ -525,7 +638,7 @@ const SettingsScreen = ({ members, onRemoveMember, onLogout }) => {
           {/* Invite Code */}
           <div style={{ margin:'0 16px 14px', background:'rgba(212,165,116,0.08)', border:'1px dashed rgba(212,165,116,0.3)', borderRadius:12, padding:14, textAlign:'center' }}>
             <div style={{ fontFamily:'Geist Mono, monospace', fontSize:10, textTransform:'uppercase', letterSpacing:'0.08em', color:'#6b7088', marginBottom:4 }}>Family invite code</div>
-            <div style={{ fontFamily:'Geist Mono, monospace', fontSize:18, fontWeight:700, color:'#d4a574', letterSpacing:'0.2em' }}>FAMSAFE-X7K2</div>
+            <div style={{ fontFamily:'Geist Mono, monospace', fontSize:18, fontWeight:700, color:'#d4a574', letterSpacing:'0.2em' }}>{inviteCode || 'Loading...'}</div>
             <div style={{ fontSize:11, color:'#a4a8b8', marginTop:6 }}>Share this code with family to add them</div>
           </div>
           <div style={{ display:'flex', alignItems:'center', gap:14, padding:'14px 16px', cursor:'pointer' }}>
@@ -587,6 +700,7 @@ const Modal = ({ member, isSOS, onDismiss, onConfirmOk }) => (
 )
 
 // ===== MAIN APP =====
+// ===== MAIN APP =====
 export default function App() {
   const [screen, setScreen] = useState('splash')
   const [view, setView] = useState('dashboard')
@@ -600,6 +714,87 @@ export default function App() {
   const [mySpeed, setMySpeed] = useState(0)
   const watchIdRef = useRef(null)
   const lastAlertedRef = useRef({})
+  const [currentUser, setCurrentUser] = useState(null)
+  const [familyId, setFamilyId] = useState(null)
+  const [inviteCode, setInviteCode] = useState('')
+  const [loading, setLoading] = useState(true)
+
+  // ===== LOAD USER + FAMILY ON LOGIN =====
+  useEffect(() => {
+    const unsubscribe = auth.onAuthStateChanged(async (user) => {
+      if (user) {
+        const userDoc = await getDoc(doc(db, 'users', user.uid))
+        if (userDoc.exists()) {
+          const userData = userDoc.data()
+          setCurrentUser(userData)
+          setFamilyId(userData.familyId)
+          setInviteCode(userData.inviteCode || '')
+          if (!userData.familyId) {
+            const newFamilyId = user.uid
+            const newCode = generateInviteCode()
+            await setDoc(doc(db, 'families', newFamilyId), {
+              ownerId: user.uid,
+              ownerName: userData.name,
+              inviteCode: newCode,
+              members: [user.uid],
+              createdAt: serverTimestamp()
+            })
+            await setDoc(doc(db, 'users', user.uid), {
+              ...userData,
+              familyId: newFamilyId,
+              inviteCode: newCode
+            })
+            setFamilyId(newFamilyId)
+            setInviteCode(newCode)
+          }
+          setScreen('main')
+        }
+        setLoading(false)
+      } else {
+        setScreen('splash')
+        setLoading(false)
+      }
+    })
+    return () => unsubscribe()
+  }, [])
+
+  // ===== LOAD FAMILY MEMBERS IN REAL-TIME =====
+  useEffect(() => {
+    if (!familyId) return
+    const unsubscribe = onSnapshot(
+      doc(db, 'families', familyId),
+      async (familyDoc) => {
+        if (!familyDoc.exists()) return
+        const familyData = familyDoc.data()
+        const memberIds = familyData.members || []
+        const memberProfiles = await Promise.all(
+          memberIds.map(async (uid, index) => {
+            const userDoc = await getDoc(doc(db, 'users', uid))
+            if (!userDoc.exists()) return null
+            const userData = userDoc.data()
+            return {
+              id: uid,
+              name: userData.name || 'Family Member',
+              role: uid === familyData.ownerId ? 'Owner' : 'Member',
+              avatar: getAvatar(index),
+              initial: getInitial(userData.name),
+              email: userData.email,
+              status: 'safe',
+              speed: 0,
+              location: HOME,
+              distance: 0,
+              isDriving: false,
+              battery: 100,
+              online: true,
+              lastUpdate: 'Just now'
+            }
+          })
+        )
+        setMembers(memberProfiles.filter(Boolean))
+      }
+    )
+    return () => unsubscribe()
+  }, [familyId])
 
 
   // ===== REAL GPS TRACKING =====
@@ -699,22 +894,7 @@ export default function App() {
 
   
 
-  // Live simulation
-  useEffect(() => {
-    if (screen !== 'main') return
-    const interval = setInterval(() => {
-      setMembers(prev => prev.map(m => {
-        if (!m.isDriving) return m
-        const delta = (Math.random()-0.5)*6
-        let speed = Math.max(0, m.speed+delta)
-        if (m.id==='bro') speed = Math.min(95, Math.max(40, speed))
-        if (m.id==='dad') speed = Math.min(75, Math.max(30, speed))
-        const newLoc = { lat: m.location.lat+(Math.random()-0.5)*0.002, lng: m.location.lng+(Math.random()-0.5)*0.002 }
-        return { ...m, speed, location:newLoc, status: speed>80 ? 'warn' : 'driving' }
-      }))
-    }, 2500)
-    return () => clearInterval(interval)
-  }, [screen])
+  // Simulation removed — using real GPS data only
 
   // Overspeed detection
   useEffect(() => {
@@ -746,7 +926,25 @@ export default function App() {
     setAlerts(prev => [{ id:`sos-${Date.now()}`, memberId:'me', severity:'danger', type:'SOS Alert', title:'🚨 You triggered SOS', time:'Just now', speed:'0 km/h', location:'Your current location', desc:'SOS signal sent to all family members with your live location.' }, ...prev])
   }
 
-  if (screen==='splash') return <Splash onContinue={() => setScreen('main')}/>
+  if (loading) return (
+    <div style={{ minHeight:'100vh', display:'flex', alignItems:'center', justifyContent:'center', background:'#0a0e1a', flexDirection:'column', gap:16 }}>
+      <div style={{ fontSize:48 }}>🛡️</div>
+      <div style={{ fontFamily:'Fraunces, serif', fontSize:22, fontWeight:600 }}>FamilySafe</div>
+      <div style={{ fontSize:13, color:'#6b7088' }}>Loading...</div>
+    </div>
+  )
+
+  if (screen==='splash') return <Splash onContinue={() => {}} />
+
+  if (screen==='join') return (
+    <JoinFamily
+      currentUser={currentUser}
+      onJoined={(code) => {
+        setScreen('main')
+      }}
+      onSkip={() => setScreen('main')}
+    />
+  )
 
   return (
     <>
@@ -781,13 +979,18 @@ export default function App() {
       {view==='settings' && (
         <SettingsScreen
           members={members}
+          inviteCode={inviteCode}
+          currentUser={currentUser}
           onRemoveMember={id => setMembers(p=>p.filter(m=>m.id!==id))}
-          
-          onLogout={async () => {await signOut(auth)
-  setScreen('splash')
-  setView('dashboard')
-}}
-          
+          onJoinFamily={() => setScreen('join')}
+          onLogout={async () => {
+            await signOut(auth)
+            setCurrentUser(null)
+            setFamilyId(null)
+            setMembers([])
+            setScreen('splash')
+            setView('dashboard')
+          }}
         />
       )}
 
