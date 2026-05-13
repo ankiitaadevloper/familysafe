@@ -315,7 +315,7 @@ const JoinFamily = ({ currentUser, onJoined, onSkip }) => {
   const mapRef = useRef(null)
   const leafletRef = useRef(null)
   const markersRef = useRef([])
-  const featured = (selectedId && members.find(m=>m.id===selectedId)) || members.find(m=>m.isDriving) || members[0]
+  const featured = (selectedId && members.find(m => m.id === selectedId)) || members.find(m => m.isDriving) || members[0] || { id:'placeholder', name:'Loading...', initial:'?', avatar:'avatar-me', status:'safe', speed:0, location:HOME, distance:0, isDriving:false, tripDistance:0, topSpeed:0, duration:'—', eta:'—', routeFrom:'', routeTo:'' }
 
   useEffect(() => {
     if (!mapRef.current || leafletRef.current) return
