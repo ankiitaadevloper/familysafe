@@ -432,9 +432,9 @@ const Dashboard = ({ members, alerts, onDismissAlert, selectedId, onSelectMember
         {/* Meta Grid */}
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, marginTop: 14 }}>
           {[
-            { label: 'Distance', value: featured.isDriving ? `${(featured.tripDistance || 0).toFixed(1)}` : '0.0', unit: 'km' },
-            { label: 'Top Speed', value: isJourneyActive && myTopSpeed > 0 ? myTopSpeed : (featured.isDriving ? featured.topSpeed || 0 : 0), unit: 'km/h' },
-            { label: 'Duration', value: featured.isDriving ? featured.duration || '—' : '—', unit: '' },
+          { label: 'Distance', value: isJourneyActive ? myDistance.toFixed(2) : (featured.isDriving ? (featured.tripDistance || 0).toFixed(1) : '0.0'), unit: 'km' },
+          { label: 'Top Speed', value: isJourneyActive && myTopSpeed > 0 ? myTopSpeed : (featured.isDriving ? featured.topSpeed || 0 : 0), unit: 'km/h' },
+          { label: 'Duration', value: isJourneyActive ? `${String(Math.floor(myDuration/3600)).padStart(2,'0')}:${String(Math.floor((myDuration%3600)/60)).padStart(2,'0')}:${String(myDuration%60).padStart(2,'0')}` : (featured.isDriving ? featured.duration || '—' : '—'), unit: '' },
           ].map(s => (
             <div key={s.label} style={{ background: 'rgba(255,255,255,0.03)', borderRadius: 12, padding: '10px 12px', textAlign: 'center' }}>
               <div style={{ fontFamily: 'Geist Mono, monospace', fontSize: 9, textTransform: 'uppercase', letterSpacing: '0.08em', color: '#6b7088', marginBottom: 3 }}>{s.label}</div>
@@ -677,6 +677,11 @@ export default function App() {
   const [myLocation, setMyLocation] = useState(null)
   const [mySpeed, setMySpeed] = useState(0)
   const [myTopSpeed, setMyTopSpeed] = useState(0)
+  const [myDistance, setMyDistance] = useState(0)
+  const [myDuration, setMyDuration] = useState(0)
+  const journeyStartRef = useRef(null)
+  const lastLocationRef = useRef(null)
+  const durationTimerRef = useRef(null)
   const [currentUser, setCurrentUser] = useState(null)
   const [familyId, setFamilyId] = useState(null)
   const [inviteCode, setInviteCode] = useState('')
@@ -758,13 +763,38 @@ export default function App() {
   // GPS tracking
   const startTracking = async () => {
     if (!navigator.geolocation) { alert('GPS not supported on this device'); return }
+    // Reset trip stats
+    setMyDistance(0)
+    setMyDuration(0)
+    journeyStartRef.current = Date.now()
+    lastLocationRef.current = null
+    // Start duration timer — updates every second
+    durationTimerRef.current = setInterval(() => {
+      if (journeyStartRef.current) {
+        const elapsed = Math.floor((Date.now() - journeyStartRef.current) / 1000)
+        setMyDuration(elapsed)
+      }
+    }, 1000)
     watchIdRef.current = navigator.geolocation.watchPosition(
       async (position) => {
         const { latitude, longitude, speed: rawSpeed } = position.coords
         const speedKmh = rawSpeed ? Math.round(rawSpeed * 3.6) : 0
-        setMyLocation({ lat: latitude, lng: longitude })
+        const newLocation = { lat: latitude, lng: longitude }
+        setMyLocation(newLocation)
         setMySpeed(speedKmh)
         setMyTopSpeed(prev => Math.max(prev, speedKmh))
+        // Calculate distance from last GPS point
+        if (lastLocationRef.current) {
+          const R = 6371
+          const dLat = (latitude - lastLocationRef.current.lat) * Math.PI / 180
+          const dLon = (longitude - lastLocationRef.current.lng) * Math.PI / 180
+          const a = Math.sin(dLat/2)**2 + Math.cos(lastLocationRef.current.lat * Math.PI/180) * Math.cos(latitude * Math.PI/180) * Math.sin(dLon/2)**2
+          const d = R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a))
+          if (d > 0.005) { // only count if moved more than 5 meters
+            setMyDistance(prev => prev + d)
+          }
+        }
+        lastLocationRef.current = newLocation
         if (auth.currentUser) {
           await setDoc(doc(db, 'locations', auth.currentUser.uid), { lat: latitude, lng: longitude, speed: speedKmh, isDriving: true, timestamp: serverTimestamp(), uid: auth.currentUser.uid, name: currentUser?.name || 'Family Member' })
         }
@@ -782,6 +812,14 @@ export default function App() {
     setMySpeed(0)
     setMyLocation(null)
     setMyTopSpeed(0)
+    setMyDistance(0)
+    setMyDuration(0)
+    journeyStartRef.current = null
+    lastLocationRef.current = null
+    if (durationTimerRef.current) {
+      clearInterval(durationTimerRef.current)
+      durationTimerRef.current = null
+    }
   }
 
   const triggerSOS = () => {
