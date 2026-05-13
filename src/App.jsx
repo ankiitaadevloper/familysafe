@@ -811,14 +811,15 @@ export default function App() {
         setMyLocation({ lat: latitude, lng: longitude })
         setMySpeed(speedKmh)
         // Save to Firestore so family can see in real-time
-        if (auth.currentUser) {
+    if (auth.currentUser) {
           await setDoc(doc(db, 'locations', auth.currentUser.uid), {
             lat: latitude,
             lng: longitude,
             speed: speedKmh,
             isDriving: true,
             timestamp: serverTimestamp(),
-            uid: auth.currentUser.uid
+            uid: auth.currentUser.uid,
+            name: currentUser?.name || 'Family Member'
           })
         }
         // Check overspeed
@@ -862,29 +863,51 @@ export default function App() {
   }
 
   // ===== LIVE FAMILY LOCATION SYNC =====
+// ===== LIVE FAMILY LOCATION SYNC =====
   useEffect(() => {
     if (screen !== 'main') return
     // Listen for ALL location updates from Firestore in real-time
     const unsubscribe = onSnapshot(
       collection(db, 'locations'),
       (snapshot) => {
-        snapshot.forEach((docSnap) => {
-          const data = docSnap.data()
-          // Update the matching family member's location
+        snapshot.docChanges().forEach((change) => {
+          const data = change.doc.data()
+          const uid = change.doc.id
+          // Update the matching family member's location + speed
           setMembers(prev => prev.map(m => {
-            if (m.email === auth.currentUser?.email) return m // skip self
-            if (docSnap.id === m.id) {
-              return {
-                ...m,
-                location: { lat: data.lat, lng: data.lng },
-                speed: data.speed || 0,
-                isDriving: data.isDriving || false,
-                status: data.speed > 80 ? 'warn' : data.isDriving ? 'driving' : 'safe',
-                lastUpdate: 'Just now'
-              }
+            if (m.id !== uid) return m
+            const speed = data.speed || 0
+            return {
+              ...m,
+              location: { lat: data.lat, lng: data.lng },
+              speed: speed,
+              isDriving: data.isDriving || false,
+              status: speed > 80 ? 'warn' : data.isDriving ? 'driving' : 'safe',
+              lastUpdate: 'Just now',
+              routeFrom: data.isDriving ? 'On the road' : 'At home',
+              routeTo: '',
+              tripDistance: data.tripDistance || 0,
+              topSpeed: data.topSpeed || speed,
+              eta: '—'
             }
-            return m
           }))
+          // Fire overspeed alert
+          if (data.speed > 80 && !lastAlertedRef.current[uid]) {
+            lastAlertedRef.current[uid] = Date.now()
+            const memberName = data.name || 'Family member'
+            setAlerts(prev => [{
+              id: `warn-${uid}-${Date.now()}`,
+              memberId: uid,
+              severity: 'warn',
+              type: 'Overspeed Alert',
+              title: `${memberName} is driving fast`,
+              time: 'Just now',
+              speed: `${Math.round(data.speed)} km/h`,
+              location: 'On the road',
+              desc: `Currently at ${Math.round(data.speed)} km/h — over the 80 km/h limit.`
+            }, ...prev])
+          }
+          if (data.speed <= 80) delete lastAlertedRef.current[uid]
         })
       }
     )
