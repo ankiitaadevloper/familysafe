@@ -687,6 +687,9 @@ export default function App() {
   const [inviteCode, setInviteCode] = useState('')
   const [loading, setLoading] = useState(true)
   const watchIdRef = useRef(null)
+  const journeyStartRef = useRef(null)
+  const lastLocationRef = useRef(null)
+  const durationTimerRef = useRef(null)
   const lastAlertedRef = useRef({})
 
   // Load user on auth state change
