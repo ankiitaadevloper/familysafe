@@ -256,7 +256,7 @@ const Splash = ({ onContinue }) => {
 }
 
 // ===== DASHBOARD =====
-const Dashboard = ({ members, alerts, onDismissAlert, selectedId, onSelectMember, isJourneyActive, mySpeed, myTopSpeed, myLocation, onToggleJourney, onSOS, goTo, onAddMember }) => {
+const Dashboard = ({ members, alerts, onDismissAlert, selectedId, onSelectMember, isJourneyActive, mySpeed, myTopSpeed, myDistance, myDuration, myLocation, onToggleJourney, onSOS, goTo, onAddMember }) => {
   const mapRef = useRef(null)
   const leafletRef = useRef(null)
   const markersRef = useRef([])
@@ -868,6 +868,8 @@ export default function App() {
           isJourneyActive={isJourneyActive}
           mySpeed={mySpeed}
           myTopSpeed={myTopSpeed}
+          myDistance={myDistance}
+          myDuration={myDuration}
           myLocation={myLocation}
           onToggleJourney={async () => {
             if (!isJourneyActive) { setIsJourneyActive(true); await startTracking() }
