@@ -131,7 +131,7 @@ const JoinFamily = ({ currentUser, onJoined, onSkip }) => {
     <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', padding: '32px 24px', background: '#0a0e1a' }}>
       <div style={{ marginTop: 60, marginBottom: 40 }}>
         <div style={{ fontSize: 48, marginBottom: 20, textAlign: 'center' }}>👨‍👩‍👧‍👦</div>
-        <h1 style={{ fontFamily: 'Fraunces, serif', fontSize: 36, fontWeight: 600, letterSpacing: '-0.03em', textAlign: 'center', marginBottom: 12 }}>Join your family</h1>
+        <h1 style={{ fontFamily: 'Fraunces, serif', fontSize: 36, fontWeight: 600, letterSpacing: '-0.03em', textAlign: 'center', marginBottom: 12, color: 'white' }}>Join your family</h1>
         <p style={{ color: '#a4a8b8', fontSize: 15, lineHeight: 1.5, textAlign: 'center' }}>Enter the invite code shared by your family member to connect and track each other safely.</p>
       </div>
       <div style={{ background: 'rgba(31,38,64,0.55)', backdropFilter: 'blur(20px)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 20, padding: 24, marginBottom: 20 }}>
@@ -748,7 +748,19 @@ export default function App() {
         setMembers(prev => prev.map(m => {
           if (m.id !== uid) return m
           const speed = data.speed || 0
-          return { ...m, location: { lat: data.lat, lng: data.lng }, speed, isDriving: data.isDriving || false, status: speed > 80 ? 'warn' : data.isDriving ? 'driving' : 'safe', lastUpdate: 'Just now', routeFrom: data.isDriving ? 'On the road' : 'Home', routeTo: '', tripDistance: data.tripDistance || 0, topSpeed: Math.max(m.topSpeed || 0, speed) }
+          return {
+            ...m,
+            location: { lat: data.lat, lng: data.lng },
+            speed,
+            isDriving: data.isDriving || false,
+            status: speed > 80 ? 'warn' : data.isDriving ? 'driving' : 'safe',
+            lastUpdate: 'Just now',
+            routeFrom: data.isDriving ? 'On the road' : 'Home',
+            routeTo: '',
+            tripDistance: data.tripDistance || 0,
+            topSpeed: data.topSpeed || speed,
+            duration: data.duration || '—'
+          }
         }))
         if (data.speed > 80 && !lastAlertedRef.current[uid]) {
           lastAlertedRef.current[uid] = Date.now()
@@ -783,21 +795,39 @@ export default function App() {
         setMyLocation(newLocation)
         setMySpeed(speedKmh)
         setMyTopSpeed(prev => Math.max(prev, speedKmh))
-        // Calculate distance from last GPS point
-        if (lastLocationRef.current) {
-          const R = 6371
-          const dLat = (latitude - lastLocationRef.current.lat) * Math.PI / 180
-          const dLon = (longitude - lastLocationRef.current.lng) * Math.PI / 180
-          const a = Math.sin(dLat/2)**2 + Math.cos(lastLocationRef.current.lat * Math.PI/180) * Math.cos(latitude * Math.PI/180) * Math.sin(dLon/2)**2
-          const d = R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a))
-          if (d > 0.005) { // only count if moved more than 5 meters
-            setMyDistance(prev => prev + d)
-          }
+         
+        if (auth.currentUser) {
+          setMyDistance(prev => {
+            const newDist = lastLocationRef.current
+              ? (() => {
+                  const R = 6371
+                  const dLat = (latitude - lastLocationRef.current.lat) * Math.PI / 180
+                  const dLon = (longitude - lastLocationRef.current.lng) * Math.PI / 180
+                  const a = Math.sin(dLat/2)**2 + Math.cos(lastLocationRef.current.lat * Math.PI/180) * Math.cos(latitude * Math.PI/180) * Math.sin(dLon/2)**2
+                  const d = R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a))
+                  return d > 0.005 ? prev + d : prev
+                })()
+              : prev
+            // Save to Firestore with updated distance
+            const elapsed = journeyStartRef.current ? Math.floor((Date.now() - journeyStartRef.current) / 1000) : 0
+            const mins = Math.floor(elapsed / 60)
+            const secs = elapsed % 60
+            setDoc(doc(db, 'locations', auth.currentUser.uid), {
+              lat: latitude,
+              lng: longitude,
+              speed: speedKmh,
+              isDriving: true,
+              timestamp: serverTimestamp(),
+              uid: auth.currentUser.uid,
+              name: currentUser?.name || 'Family Member',
+              tripDistance: newDist,
+              topSpeed: Math.max(speedKmh, 0),
+              duration: `${String(Math.floor(elapsed/3600)).padStart(2,'0')}:${String(mins % 60).padStart(2,'0')}:${String(secs).padStart(2,'0')}`
+            })
+            return newDist
+          })
         }
         lastLocationRef.current = newLocation
-        if (auth.currentUser) {
-          await setDoc(doc(db, 'locations', auth.currentUser.uid), { lat: latitude, lng: longitude, speed: speedKmh, isDriving: true, timestamp: serverTimestamp(), uid: auth.currentUser.uid, name: currentUser?.name || 'Family Member' })
-        }
       },
       (error) => console.log('GPS error:', error.message),
       { enableHighAccuracy: true, maximumAge: 2000, timeout: 10000 }
