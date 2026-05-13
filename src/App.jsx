@@ -552,9 +552,6 @@ const SettingsScreen = ({ members, inviteCode, currentUser, onRemoveMember, onJo
           <div style={{ fontFamily: 'Fraunces, serif', fontSize: 20, fontWeight: 600, marginBottom: 2 }}>{currentUser?.name || 'You'}</div>
           <div style={{ fontSize: 13, color: '#a4a8b8' }}>{currentUser?.email || ''}</div>
         </div>
-        <button onClick={onJoinFamily} style={{ background: 'linear-gradient(135deg,#d4a574,#b88a5c)', border: 'none', color: '#0a0e1a', width: 36, height: 36, borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
-          <Icon name="plus" size={16} />
-        </button>
       </div>
 
       {/* Notifications */}
@@ -604,17 +601,6 @@ const SettingsScreen = ({ members, inviteCode, currentUser, onRemoveMember, onJo
             <div style={{ fontSize: 11, color: '#a4a8b8', marginTop: 6 }}>Share this code with family to add them</div>
           </div>
 
-          {/* Join a Family Button */}
-          <div onClick={onJoinFamily} style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '14px 16px', cursor: 'pointer', borderTop: '1px solid rgba(255,255,255,0.06)' }}>
-            <div style={{ width: 34, height: 34, borderRadius: 10, background: '#1a2033', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#5eddb4', flexShrink: 0 }}>
-              <Icon name="plus" size={16} />
-            </div>
-            <div style={{ flex: 1 }}>
-              <div style={{ fontSize: 14, fontWeight: 500 }}>Join a family</div>
-              <div style={{ fontSize: 12, color: '#6b7088' }}>Enter someone's invite code</div>
-            </div>
-            <Icon name="chevron" size={16} />
-          </div>
         </div>
       </div>
 
