@@ -293,8 +293,7 @@ const JoinFamily = ({ currentUser, onJoined, onSkip }) => {
               } else {
                 await signInWithEmailAndPassword(auth, email, pass)
               }
-              onContinue()
-
+            onContinue(mode)
             } catch (err) {
               setError(err.message.replace('Firebase: ','').replace(/\(auth.*\)/,'').trim())
             }
@@ -363,9 +362,9 @@ const JoinFamily = ({ currentUser, onJoined, onSkip }) => {
             <Icon name="bell" size={18}/>
             {alerts.length > 0 && <div style={{ position:'absolute', top:8, right:8, width:8, height:8, borderRadius:'50%', background:'#ff5e6c', border:'2px solid #0a0e1a' }}></div>}
           </button>
-          <button style={{ ...S.iconBtn, background:'linear-gradient(135deg,#d4a574,#b88a5c)', border:'none', color:'#0a0e1a' }}>
-            <Icon name="plus" size={18}/>
-          </button>
+      <button onClick={() => setScreen('join')} style={{ ...S.iconBtn, background:'linear-gradient(135deg,#d4a574,#b88a5c)', border:'none', color:'#0a0e1a' }}>
+        <Icon name="plus" size={18}/>
+      </button>
         </div>
       </div>
 
@@ -934,17 +933,31 @@ export default function App() {
     </div>
   )
 
-  if (screen==='splash') return <Splash onContinue={() => {}} />
+  if (screen==='splash') return (
+      <Splash
+        onContinue={(mode) => {
+          if (mode === 'signup') {
+            setScreen('join')
+          } else {
+            setScreen('main')
+          }
+        }}
+      />
+    )
 
   if (screen==='join') return (
-    <JoinFamily
-      currentUser={currentUser}
-      onJoined={(code) => {
-        setScreen('main')
-      }}
-      onSkip={() => setScreen('main')}
-    />
-  )
+      <JoinFamily
+        currentUser={currentUser}
+        onJoined={(code) => {
+          setScreen('main')
+          setView('dashboard')
+        }}
+        onSkip={() => {
+          setScreen('main')
+          setView('dashboard')
+        }}
+      />
+    )
 
   return (
     <>
