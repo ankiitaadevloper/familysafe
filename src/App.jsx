@@ -310,7 +310,7 @@ const JoinFamily = ({ currentUser, onJoined, onSkip }) => {
 }
 
 // ===== DASHBOARD =====
-  const Dashboard = ({ members, alerts, onDismissAlert, selectedId, onSelectMember, isJourneyActive, mySpeed, myLocation, onToggleJourney, onSOS, goTo }) => {
+  const Dashboard = ({ members, alerts, onDismissAlert, selectedId, onSelectMember, isJourneyActive, mySpeed, myLocation, onToggleJourney, onSOS, goTo, onAddMember }) => {
   const mapRef = useRef(null)
   const leafletRef = useRef(null)
   const markersRef = useRef([])
@@ -362,9 +362,11 @@ const JoinFamily = ({ currentUser, onJoined, onSkip }) => {
             <Icon name="bell" size={18}/>
             {alerts.length > 0 && <div style={{ position:'absolute', top:8, right:8, width:8, height:8, borderRadius:'50%', background:'#ff5e6c', border:'2px solid #0a0e1a' }}></div>}
           </button>
-      <button onClick={() => setScreen('join')} style={{ ...S.iconBtn, background:'linear-gradient(135deg,#d4a574,#b88a5c)', border:'none', color:'#0a0e1a' }}>
+
+      <button onClick={onAddMember} style={{ ...S.iconBtn, background:'linear-gradient(135deg,#d4a574,#b88a5c)', border:'none', color:'#0a0e1a' }}>
         <Icon name="plus" size={18}/>
       </button>
+
         </div>
       </div>
 
@@ -758,8 +760,9 @@ export default function App() {
   }, [])
 
   // ===== LOAD FAMILY MEMBERS IN REAL-TIME =====
+// ===== LOAD FAMILY MEMBERS IN REAL-TIME =====
   useEffect(() => {
-    if (!familyId) return
+    if (!familyId || screen !== 'main') return
     const unsubscribe = onSnapshot(
       doc(db, 'families', familyId),
       async (familyDoc) => {
@@ -957,16 +960,17 @@ export default function App() {
   )
 
   if (screen==='splash') return (
-      <Splash
-        onContinue={(mode) => {
-          if (mode === 'signup') {
-            setScreen('join')
-          } else {
-            setScreen('main')
-          }
-        }}
-      />
-    )
+    <Splash
+      onContinue={(mode) => {
+        if (mode === 'signup') {
+          // Small delay to let Firebase save user data first
+          setTimeout(() => setScreen('join'), 1500)
+        } else {
+          setScreen('main')
+        }
+      }}
+    />
+  )
 
   if (screen==='join') return (
       <JoinFamily
@@ -985,7 +989,7 @@ export default function App() {
   return (
     <>
       {view==='dashboard' && (
-        <Dashboard
+          <Dashboard
           members={members} alerts={alerts}
           onDismissAlert={id => setAlerts(p=>p.filter(a=>a.id!==id))}
           selectedId={selectedId}
@@ -1004,6 +1008,7 @@ export default function App() {
           }}
           onSOS={triggerSOS}
           goTo={setView}
+          onAddMember={() => setScreen('join')}
         />
       )}
       {view==='alerts' && (
