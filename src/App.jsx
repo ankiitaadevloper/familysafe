@@ -813,7 +813,9 @@ export default function App() {
     watchIdRef.current = navigator.geolocation.watchPosition(
       async (position) => {
         const { latitude, longitude, speed: rawSpeed } = position.coords
-        const speedKmh = rawSpeed ? Math.round(rawSpeed * 3.6) : 0
+        // Filter GPS noise — anything under 5 km/h while using browser GPS is drift
+        const rawKmh = rawSpeed ? rawSpeed * 3.6 : 0
+        const speedKmh = rawKmh > 3 ? Math.round(rawKmh) : 0
         const newLocation = { lat: latitude, lng: longitude }
 
         setMyLocation(newLocation)
