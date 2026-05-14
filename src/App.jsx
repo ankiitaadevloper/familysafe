@@ -2,9 +2,9 @@ import { useState, useEffect, useRef } from 'react'
 import './App.css'
 import { auth, db } from './firebase'
 import {
-  createUserWithEmailAndPassword,
-  signInWithEmailAndPassword,
-  signOut
+  signOut,
+  GoogleAuthProvider,
+  signInWithPopup
 } from 'firebase/auth'
 import {
   doc, setDoc, getDoc, collection,
@@ -161,13 +161,50 @@ const JoinFamily = ({ currentUser, onJoined, onSkip }) => {
 
 // ===== SPLASH / AUTH SCREEN =====
 const Splash = ({ onContinue }) => {
-  const [mode, setMode] = useState('login')
-  const [email, setEmail] = useState('')
-  const [pass, setPass] = useState('')
-  const [name, setName] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
-  const inputStyle = { width: '100%', padding: '16px 18px', background: 'rgba(31,38,64,0.55)', backdropFilter: 'blur(20px)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 14, color: '#f5f5f0', fontFamily: 'inherit', fontSize: 15, outline: 'none' }
+
+  const signInWithGoogle = async () => {
+    setLoading(true)
+    setError('')
+    try {
+      const provider = new GoogleAuthProvider()
+      const cred = await signInWithPopup(auth, provider)
+      const user = cred.user
+      const userDoc = await getDoc(doc(db, 'users', user.uid))
+      if (!userDoc.exists()) {
+        const newCode = generateInviteCode()
+        const newFamilyId = user.uid
+        await setDoc(doc(db, 'users', user.uid), {
+          name: user.displayName || 'Family Member',
+          email: user.email,
+          uid: user.uid,
+          createdAt: serverTimestamp(),
+          familyId: newFamilyId,
+          inviteCode: newCode,
+          photo: user.photoURL || null
+        })
+        await setDoc(doc(db, 'families', newFamilyId), {
+          ownerId: user.uid,
+          ownerName: user.displayName || 'Family Member',
+          inviteCode: newCode,
+          members: [user.uid],
+          createdAt: serverTimestamp()
+        })
+        onContinue('signup')
+      } else {
+        onContinue('login')
+      }
+    } catch (err) {
+      if (err.code === 'auth/popup-closed-by-user') {
+        setError('Sign-in cancelled. Please try again.')
+      } else {
+        setError('Something went wrong. Please try again.')
+        console.error(err)
+      }
+    }
+    setLoading(false)
+  }
 
   return (
     <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', padding: '32px 24px', background: 'radial-gradient(ellipse 600px 600px at 50% 0%, rgba(107,168,255,0.08), transparent)' }}>
@@ -180,10 +217,10 @@ const Splash = ({ onContinue }) => {
       <h1 style={{ fontFamily: 'Fraunces, serif', fontSize: 52, lineHeight: 0.95, fontWeight: 500, letterSpacing: '-0.04em', marginBottom: 20, animation: 'fadeUp 0.8s ease-out' }}>
         Drive safe.<br />Stay <em style={{ fontStyle: 'italic', color: '#d4a574', fontWeight: 400 }}>connected.</em>
       </h1>
-      <p style={{ color: '#a4a8b8', fontSize: 15, lineHeight: 1.5, marginBottom: 28, animation: 'fadeUp 1s ease-out 0.1s both' }}>
+      <p style={{ color: '#a4a8b8', fontSize: 15, lineHeight: 1.5, marginBottom: 32, animation: 'fadeUp 1s ease-out 0.1s both' }}>
         Real-time tracking, speed alerts, and accident detection — built for families who care.
       </p>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginBottom: 28, animation: 'fadeUp 1s ease-out 0.3s both' }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginBottom: 40, animation: 'fadeUp 1s ease-out 0.3s both' }}>
         {[
           { icon: 'speed', color: '#6ba8ff', bg: 'rgba(107,168,255,0.15)', title: 'Live speed monitoring', desc: 'Alert family when driving above 80 km/h' },
           { icon: 'alert', color: '#ff5e6c', bg: 'rgba(255,94,108,0.15)', title: 'Accident detection', desc: 'Unexpected stops trigger instant alerts' },
@@ -200,56 +237,30 @@ const Splash = ({ onContinue }) => {
           </div>
         ))}
       </div>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 12, animation: 'fadeUp 1s ease-out 0.4s both' }}>
-        <div style={{ display: 'flex', background: 'rgba(31,38,64,0.55)', backdropFilter: 'blur(20px)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 14, padding: 4 }}>
-          {['login', 'signup'].map(m => (
-            <button key={m} onClick={() => setMode(m)} style={{ flex: 1, padding: 10, border: 'none', background: mode === m ? '#1a2033' : 'transparent', color: mode === m ? '#f5f5f0' : '#6b7088', fontFamily: 'inherit', fontSize: 13, fontWeight: 600, borderRadius: 10, cursor: 'pointer', transition: 'all 0.2s' }}>
-              {m === 'login' ? 'Log in' : 'Sign up'}
-            </button>
-          ))}
+      {error && (
+        <div style={{ padding: '12px 16px', background: 'rgba(255,94,108,0.1)', border: '1px solid rgba(255,94,108,0.3)', borderRadius: 12, fontSize: 13, color: '#ff5e6c', textAlign: 'center', marginBottom: 16 }}>
+          {error}
         </div>
-        {mode === 'signup' && <input style={inputStyle} type="text" placeholder="Your name" value={name} onChange={e => setName(e.target.value)} />}
-        <input style={inputStyle} type="email" placeholder="Email address" value={email} onChange={e => setEmail(e.target.value)} />
-        <input style={inputStyle} type="password" placeholder="Password" value={pass} onChange={e => setPass(e.target.value)} />
-        {error && <div style={{ padding: '10px 14px', background: 'rgba(255,94,108,0.1)', border: '1px solid rgba(255,94,108,0.3)', borderRadius: 10, fontSize: 13, color: '#ff5e6c', textAlign: 'center' }}>{error}</div>}
-        <button
-          onClick={async () => {
-            if (!email || !pass) { setError('Please enter email and password'); return }
-            setLoading(true)
-            setError('')
-            try {
-              if (mode === 'signup') {
-                const cred = await createUserWithEmailAndPassword(auth, email, pass)
-                const newCode = generateInviteCode()
-                const newFamilyId = cred.user.uid
-                await setDoc(doc(db, 'users', cred.user.uid), {
-                  name: name || 'Family Member',
-                  email,
-                  uid: cred.user.uid,
-                  createdAt: serverTimestamp(),
-                  familyId: newFamilyId,
-                  inviteCode: newCode
-                })
-                await setDoc(doc(db, 'families', newFamilyId), {
-                  ownerId: cred.user.uid,
-                  ownerName: name || 'Family Member',
-                  inviteCode: newCode,
-                  members: [cred.user.uid],
-                  createdAt: serverTimestamp()
-                })
-              } else {
-                await signInWithEmailAndPassword(auth, email, pass)
-              }
-              onContinue(mode)
-            } catch (err) {
-              setError(err.message.replace('Firebase: ', '').replace(/\(auth.*\)/, '').trim())
-            }
-            setLoading(false)
-          }}
-          style={{ width: '100%', padding: 18, borderRadius: 14, background: loading ? '#ccc' : '#f5f5f0', color: '#0a0e1a', border: 'none', fontFamily: 'inherit', fontSize: 15, fontWeight: 600, cursor: loading ? 'not-allowed' : 'pointer', marginTop: 8 }}
-        >
-          {loading ? '⏳ Please wait...' : mode === 'login' ? 'Enter App' : 'Create Account'}
-        </button>
+      )}
+      <button
+        onClick={signInWithGoogle}
+        disabled={loading}
+        style={{ width: '100%', padding: 18, borderRadius: 14, background: loading ? '#ccc' : 'white', color: '#1a1a1a', border: 'none', fontFamily: 'inherit', fontSize: 15, fontWeight: 600, cursor: loading ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 12, boxShadow: '0 4px 20px rgba(0,0,0,0.2)', marginTop: 'auto' }}
+      >
+        {loading ? '⏳ Signing in...' : (
+          <>
+            <svg width="20" height="20" viewBox="0 0 24 24">
+              <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
+              <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
+              <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/>
+              <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
+            </svg>
+            Continue with Google
+          </>
+        )}
+      </button>
+      <div style={{ textAlign: 'center', marginTop: 16, fontSize: 12, color: '#6b7088' }}>
+        By continuing, you agree to use FamilySafe for family safety only.
       </div>
     </div>
   )
@@ -871,7 +882,7 @@ export default function App() {
   if (screen === 'splash') return (
     <Splash onContinue={(mode) => {
       if (mode === 'signup') {
-        setTimeout(() => setScreen('join'), 1500)
+        setTimeout(() => setScreen('join'), 500)
       } else {
         setScreen('main')
       }
