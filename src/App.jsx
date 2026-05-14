@@ -78,13 +78,10 @@ const getAvatar = (index) => {
 const getInitial = (name) => name ? name.charAt(0).toUpperCase() : '?'
 
 // ===== ARROW MARKER HTML =====
-const arrowMarker = (color, opacity = '0.2') =>
-  `<div style="width:36px;height:36px;display:flex;align-items:center;justify-content:center;">
-    <svg width="36" height="36" viewBox="0 0 36 36" fill="none">
-      <circle cx="18" cy="18" r="18" fill="${color}" opacity="${opacity}"/>
-      <circle cx="18" cy="18" r="12" fill="${color}"/>
-      <path d="M18 10 L24 24 L18 21 L12 24 Z" fill="white"/>
-    </svg>
+const arrowMarker = (color) =>
+  `<div style="width:36px;height:36px;display:flex;align-items:center;justify-content:center;position:relative;">
+    <div style="position:absolute;width:36px;height:36px;border-radius:50%;background:${color};opacity:0.25;animation:pulse 1.5s ease-out infinite;"></div>
+    <div style="width:16px;height:16px;border-radius:50%;background:${color};border:3px solid white;box-shadow:0 2px 8px rgba(0,0,0,0.4);position:relative;z-index:1;"></div>
   </div>`
 
 // ===== STYLES =====
@@ -267,7 +264,7 @@ const Splash = ({ onContinue }) => {
 }
 
 // ===== DASHBOARD =====
-const Dashboard = ({ members, alerts, onDismissAlert, selectedId, onSelectMember, isJourneyActive, mySpeed, myTopSpeed, myDistance, myDuration, myLocation, onToggleJourney, onSOS, goTo, onAddMember }) => {
+const Dashboard = ({ members, alerts, onDismissAlert, selectedId, onSelectMember, isJourneyActive, mySpeed, myTopSpeed, myDistance, myDuration, myLocation, onToggleJourney, onSOS, goTo, onAddMember, currentUserId }) => {
   const mapRef = useRef(null)
   const leafletRef = useRef(null)
   const markersRef = useRef([])
@@ -393,9 +390,11 @@ const Dashboard = ({ members, alerts, onDismissAlert, selectedId, onSelectMember
             <div style={{ fontFamily: 'Fraunces, serif', fontSize: 17, fontWeight: 600, letterSpacing: '-0.01em', marginBottom: 2 }}>{featured.name}</div>
             <div style={{ fontSize: 12, color: '#a4a8b8', display: 'flex', alignItems: 'center', gap: 4 }}>
               <Icon name="pin" size={11} />
-              {isJourneyActive && myLocation
+              {isJourneyActive && myLocation && (!selectedId || selectedId === currentUserId)
                 ? `📍 ${myLocation.lat.toFixed(4)}, ${myLocation.lng.toFixed(4)}`
-                : featured.isDriving ? `${featured.routeFrom} → ${featured.routeTo}` : 'At home'}
+                : featured.isDriving
+                  ? `📍 ${featured.location?.lat?.toFixed(4)}, ${featured.location?.lng?.toFixed(4)}`
+                  : '📍 Location not sharing'}
             </div>
           </div>
           <div style={{ padding: '6px 12px', borderRadius: 100, fontSize: 11, fontWeight: 600, fontFamily: 'Geist Mono, monospace', textTransform: 'uppercase', letterSpacing: '0.05em', display: 'flex', alignItems: 'center', gap: 5, background: featured.status === 'warn' ? 'rgba(255,179,71,0.15)' : featured.isDriving || isJourneyActive ? 'rgba(107,168,255,0.15)' : 'rgba(94,221,180,0.15)', color: featured.status === 'warn' ? '#ffb347' : featured.isDriving || isJourneyActive ? '#6ba8ff' : '#5eddb4', border: `1px solid ${featured.status === 'warn' ? 'rgba(255,179,71,0.3)' : featured.isDriving || isJourneyActive ? 'rgba(107,168,255,0.3)' : 'rgba(94,221,180,0.3)'}` }}>
@@ -409,7 +408,7 @@ const Dashboard = ({ members, alerts, onDismissAlert, selectedId, onSelectMember
           <div>
             <div style={{ fontFamily: 'Geist Mono, monospace', fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.08em', color: '#6b7088', marginBottom: 4 }}>Live Speed</div>
             <div style={{ fontFamily: 'Fraunces, serif', fontSize: 22, fontWeight: 600, letterSpacing: '-0.02em' }}>
-              {isJourneyActive ? mySpeed : Math.round(featured.speed)}<span style={{ fontSize: 11, color: '#a4a8b8', marginLeft: 2 }}>km/h</span>
+              {isJourneyActive && (!selectedId || selectedId === currentUserId) ? mySpeed : Math.round(featured.speed)}<span style={{ fontSize: 11, color: '#a4a8b8', marginLeft: 2 }}>km/h</span>
             </div>
           </div>
           <div>
@@ -419,10 +418,10 @@ const Dashboard = ({ members, alerts, onDismissAlert, selectedId, onSelectMember
             </div>
           </div>
           <div style={{ position: 'relative', width: 110, height: 70 }}>
-            <Gauge speed={isJourneyActive ? mySpeed : featured.speed} compact />
+            <Gauge speed={isJourneyActive && (!selectedId || selectedId === currentUserId) ? mySpeed : featured.speed} compact />
             <div style={{ position: 'absolute', top: 26, left: 0, right: 0, textAlign: 'center' }}>
               <div style={{ fontFamily: 'Fraunces, serif', fontSize: 22, fontWeight: 700, letterSpacing: '-0.02em', lineHeight: 1 }}>
-                {isJourneyActive ? mySpeed : Math.round(featured.speed)}
+                {isJourneyActive && (!selectedId || selectedId === currentUserId) ? mySpeed : Math.round(featured.speed)}
               </div>
               <div style={{ fontFamily: 'Geist Mono, monospace', fontSize: 9, color: '#6b7088', textTransform: 'uppercase', letterSpacing: '0.08em', marginTop: 2 }}>km/h</div>
             </div>
@@ -465,13 +464,24 @@ const Dashboard = ({ members, alerts, onDismissAlert, selectedId, onSelectMember
         </button>
       </div>
 
-      {/* Journey Button */}
-      <div style={{ margin: '0 20px 20px' }}>
-        <button onClick={onToggleJourney} style={{ width: '100%', padding: 18, borderRadius: 16, border: 'none', fontFamily: 'inherit', fontSize: 15, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, background: isJourneyActive ? '#ff5e6c' : 'linear-gradient(135deg,#5eddb4,#4ac99a)', color: isJourneyActive ? 'white' : '#0a0e1a', boxShadow: isJourneyActive ? '0 8px 28px rgba(255,94,108,0.2)' : '0 8px 28px rgba(94,221,180,0.15)', transition: 'all 0.2s' }}>
-          <Icon name={isJourneyActive ? 'stop' : 'play'} size={18} />
-          {isJourneyActive ? `End Journey ${mySpeed > 0 ? `• ${mySpeed} km/h` : ''}` : 'Start My Journey'}
-        </button>
-      </div>
+      {/* Journey Button — only show when viewing YOUR own profile or no selection */}
+      {(!selectedId || selectedId === currentUserId) && (
+        <div style={{ margin: '0 20px 20px' }}>
+          <button onClick={onToggleJourney} style={{ width: '100%', padding: 18, borderRadius: 16, border: 'none', fontFamily: 'inherit', fontSize: 15, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, background: isJourneyActive ? '#ff5e6c' : 'linear-gradient(135deg,#5eddb4,#4ac99a)', color: isJourneyActive ? 'white' : '#0a0e1a', boxShadow: isJourneyActive ? '0 8px 28px rgba(255,94,108,0.2)' : '0 8px 28px rgba(94,221,180,0.15)', transition: 'all 0.2s' }}>
+            <Icon name={isJourneyActive ? 'stop' : 'play'} size={18} />
+            {isJourneyActive ? `End Journey ${mySpeed > 0 ? `• ${mySpeed} km/h` : ''}` : 'Start My Journey'}
+          </button>
+        </div>
+      )}
+
+      {/* When viewing another member — show their status instead */}
+      {selectedId && selectedId !== currentUserId && (
+        <div style={{ margin: '0 20px 20px', padding: 18, borderRadius: 16, background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', textAlign: 'center' }}>
+          <div style={{ fontSize: 13, color: '#6b7088' }}>
+            {featured.isDriving ? `🚗 ${featured.name} is currently driving` : `🏠 ${featured.name} is not driving right now`}
+          </div>
+        </div>
+      )}
 
       {/* SOS Button */}
       {isJourneyActive && (
@@ -786,59 +796,63 @@ export default function App() {
   // GPS tracking
   const startTracking = async () => {
     if (!navigator.geolocation) { alert('GPS not supported on this device'); return }
-    // Reset trip stats
     setMyDistance(0)
     setMyDuration(0)
     journeyStartRef.current = Date.now()
     lastLocationRef.current = null
-    // Start duration timer — updates every second
+    // Use a ref to track distance so GPS callback always has latest value
+    const distanceRef = { current: 0 }
+
     durationTimerRef.current = setInterval(() => {
       if (journeyStartRef.current) {
         const elapsed = Math.floor((Date.now() - journeyStartRef.current) / 1000)
         setMyDuration(elapsed)
       }
     }, 1000)
+
     watchIdRef.current = navigator.geolocation.watchPosition(
       async (position) => {
         const { latitude, longitude, speed: rawSpeed } = position.coords
         const speedKmh = rawSpeed ? Math.round(rawSpeed * 3.6) : 0
         const newLocation = { lat: latitude, lng: longitude }
+
         setMyLocation(newLocation)
         setMySpeed(speedKmh)
         setMyTopSpeed(prev => Math.max(prev, speedKmh))
-         
-        if (auth.currentUser) {
-          setMyDistance(prev => {
-            const newDist = lastLocationRef.current
-              ? (() => {
-                  const R = 6371
-                  const dLat = (latitude - lastLocationRef.current.lat) * Math.PI / 180
-                  const dLon = (longitude - lastLocationRef.current.lng) * Math.PI / 180
-                  const a = Math.sin(dLat/2)**2 + Math.cos(lastLocationRef.current.lat * Math.PI/180) * Math.cos(latitude * Math.PI/180) * Math.sin(dLon/2)**2
-                  const d = R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a))
-                  return d > 0.005 ? prev + d : prev
-                })()
-              : prev
-            // Save to Firestore with updated distance
-            const elapsed = journeyStartRef.current ? Math.floor((Date.now() - journeyStartRef.current) / 1000) : 0
-            const mins = Math.floor(elapsed / 60)
-            const secs = elapsed % 60
-            setDoc(doc(db, 'locations', auth.currentUser.uid), {
-              lat: latitude,
-              lng: longitude,
-              speed: speedKmh,
-              isDriving: true,
-              timestamp: serverTimestamp(),
-              uid: auth.currentUser.uid,
-              name: currentUser?.name || 'Family Member',
-              tripDistance: newDist,
-              topSpeed: Math.max(speedKmh, 0),
-              duration: `${String(Math.floor(elapsed/3600)).padStart(2,'0')}:${String(mins % 60).padStart(2,'0')}:${String(secs).padStart(2,'0')}`
-            })
-            return newDist
-          })
+
+        // Calculate distance using ref (not state — avoids stale closure)
+        if (lastLocationRef.current) {
+          const R = 6371
+          const dLat = (latitude - lastLocationRef.current.lat) * Math.PI / 180
+          const dLon = (longitude - lastLocationRef.current.lng) * Math.PI / 180
+          const a = Math.sin(dLat/2)**2 + Math.cos(lastLocationRef.current.lat * Math.PI/180) * Math.cos(latitude * Math.PI/180) * Math.sin(dLon/2)**2
+          const d = R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a))
+          if (d > 0.005) {
+            distanceRef.current = distanceRef.current + d
+            setMyDistance(distanceRef.current)
+          }
         }
         lastLocationRef.current = newLocation
+
+        // Save to Firestore
+        if (auth.currentUser) {
+          const elapsed = journeyStartRef.current ? Math.floor((Date.now() - journeyStartRef.current) / 1000) : 0
+          const hrs = Math.floor(elapsed / 3600)
+          const mins = Math.floor((elapsed % 3600) / 60)
+          const secs = elapsed % 60
+          setDoc(doc(db, 'locations', auth.currentUser.uid), {
+            lat: latitude,
+            lng: longitude,
+            speed: speedKmh,
+            isDriving: true,
+            timestamp: serverTimestamp(),
+            uid: auth.currentUser.uid,
+            name: currentUser?.name || 'Family Member',
+            tripDistance: distanceRef.current,
+            topSpeed: speedKmh,
+            duration: `${String(hrs).padStart(2,'0')}:${String(mins).padStart(2,'0')}:${String(secs).padStart(2,'0')}`
+          })
+        }
       },
       (error) => console.log('GPS error:', error.message),
       { enableHighAccuracy: true, maximumAge: 2000, timeout: 10000 }
@@ -919,6 +933,7 @@ export default function App() {
           onSOS={triggerSOS}
           goTo={setView}
           onAddMember={() => setScreen('join')}
+          currentUserId={auth.currentUser?.uid}
         />
       )}
       {view === 'alerts' && (
