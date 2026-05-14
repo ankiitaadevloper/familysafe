@@ -709,6 +709,7 @@ export default function App() {
   const [loading, setLoading] = useState(true)
   const watchIdRef = useRef(null)
   const lastAlertedRef = useRef({})
+  const accidentCheckRef = useRef({}) // tracks stopped members
 
   // Load user on auth state change
   useEffect(() => {
@@ -783,11 +784,82 @@ export default function App() {
             duration: data.duration || '—'
           }
         }))
+        // Overspeed alert
         if (data.speed > 80 && !lastAlertedRef.current[uid]) {
           lastAlertedRef.current[uid] = Date.now()
-          setAlerts(prev => [{ id: `warn-${uid}-${Date.now()}`, memberId: uid, severity: 'warn', type: 'Overspeed Alert', title: `${data.name || 'Family member'} is driving fast`, time: 'Just now', speed: `${Math.round(data.speed)} km/h`, location: 'On the road', desc: `Currently at ${Math.round(data.speed)} km/h — over the 80 km/h limit.` }, ...prev])
+          setAlerts(prev => [{
+            id: `warn-${uid}-${Date.now()}`,
+            memberId: uid,
+            severity: 'warn',
+            type: 'Overspeed Alert',
+            title: `${data.name || 'Family member'} is driving fast`,
+            time: 'Just now',
+            speed: `${Math.round(data.speed)} km/h`,
+            location: 'On the road',
+            desc: `Currently at ${Math.round(data.speed)} km/h — over the 80 km/h limit.`
+          }, ...prev])
         }
         if (data.speed <= 80) delete lastAlertedRef.current[uid]
+
+        // Accident detection
+        const acc = accidentCheckRef.current[uid] || {}
+        if (data.isDriving) {
+          if (data.speed > 40) {
+            // Was moving fast — record last fast speed
+            accidentCheckRef.current[uid] = {
+              ...acc,
+              lastHighSpeed: data.speed,
+              lastHighSpeedTime: Date.now(),
+              stoppedAt: null
+            }
+          } else if (data.speed < 4 && acc.lastHighSpeed > 40) {
+            // Suddenly stopped after moving fast
+            if (!acc.stoppedAt) {
+              // First moment of stopping — record the time
+              accidentCheckRef.current[uid] = {
+                ...acc,
+                stoppedAt: Date.now()
+              }
+            } else {
+              // Already stopped — check how long
+              const stoppedDuration = (Date.now() - acc.stoppedAt) / 1000 // seconds
+              if (stoppedDuration >= 180 && !acc.alertSent) {
+                // Stopped for 3+ minutes after high speed — possible accident
+                accidentCheckRef.current[uid] = { ...acc, alertSent: true }
+                const memberName = data.name || 'Family member'
+                setAlerts(prev => [{
+                  id: `accident-${uid}-${Date.now()}`,
+                  memberId: uid,
+                  severity: 'danger',
+                  type: 'Accident Detection',
+                  title: `🚨 ${memberName} may need help`,
+                  time: 'Just now',
+                  speed: `Was ${Math.round(acc.lastHighSpeed)} km/h`,
+                  location: `${data.lat?.toFixed(4)}, ${data.lng?.toFixed(4)}`,
+                  desc: `${memberName} was driving at ${Math.round(acc.lastHighSpeed)} km/h and has been stopped for over 3 minutes. Please check on them.`
+                }, ...prev])
+                // Show modal
+                setModal({
+                  name: memberName,
+                  speed: acc.lastHighSpeed,
+                  location: { lat: data.lat, lng: data.lng },
+                  distance: 0
+                })
+              }
+            }
+          } else if (data.speed > 4) {
+            // Moving again — reset accident check
+            accidentCheckRef.current[uid] = {
+              lastHighSpeed: data.speed > 40 ? data.speed : acc.lastHighSpeed,
+              lastHighSpeedTime: data.speed > 40 ? Date.now() : acc.lastHighSpeedTime,
+              stoppedAt: null,
+              alertSent: false
+            }
+          }
+        } else {
+          // Trip ended — clear accident check for this member
+          delete accidentCheckRef.current[uid]
+        }
       })
     })
     return () => unsubscribe()
@@ -879,11 +951,40 @@ export default function App() {
     }
   }
 
-  const triggerSOS = () => {
-    const me = members.find(m => m.id === auth.currentUser?.uid) || { name: 'You', speed: mySpeed, location: myLocation || HOME }
+  const triggerSOS = async () => {
+    const me = members.find(m => m.id === auth.currentUser?.uid) || { name: currentUser?.name || 'You', speed: mySpeed, location: myLocation || HOME }
     setIsSOS(true)
-    setModal(me)
-    setAlerts(prev => [{ id: `sos-${Date.now()}`, memberId: auth.currentUser?.uid, severity: 'danger', type: 'SOS Alert', title: '🚨 SOS triggered', time: 'Just now', speed: `${mySpeed} km/h`, location: 'Your current location', desc: 'SOS signal sent to all family members with your live location.' }, ...prev])
+    setModal({ ...me, speed: mySpeed, location: myLocation || HOME })
+
+    const sosAlert = {
+      id: `sos-${Date.now()}`,
+      memberId: auth.currentUser?.uid,
+      memberName: currentUser?.name || 'Family Member',
+      severity: 'danger',
+      type: 'SOS Alert',
+      title: `🚨 ${currentUser?.name || 'Family member'} triggered SOS`,
+      time: 'Just now',
+      speed: `${mySpeed} km/h`,
+      location: myLocation ? `${myLocation.lat.toFixed(4)}, ${myLocation.lng.toFixed(4)}` : 'Unknown',
+      desc: `${currentUser?.name || 'Family member'} needs help! Live location shared. Speed: ${mySpeed} km/h`,
+      lat: myLocation?.lat || HOME.lat,
+      lng: myLocation?.lng || HOME.lng,
+      createdAt: Date.now()
+    }
+
+    // Save to Firestore so ALL family members see it
+    try {
+      await setDoc(doc(db, 'sos_alerts', `sos-${auth.currentUser?.uid}`), {
+        ...sosAlert,
+        familyId,
+        timestamp: serverTimestamp()
+      })
+    } catch (err) {
+      console.error('SOS save error:', err)
+    }
+
+    // Show locally too
+    setAlerts(prev => [sosAlert, ...prev])
   }
 
   // Loading screen
@@ -950,7 +1051,33 @@ export default function App() {
           members={members}
           inviteCode={inviteCode}
           currentUser={currentUser}
-          onRemoveMember={id => setMembers(p => p.filter(m => m.id !== id))}
+          onRemoveMember={async (id) => {
+            try {
+              // Remove from Firestore family document
+              const familyDoc = await getDoc(doc(db, 'families', familyId))
+              if (familyDoc.exists()) {
+                const familyData = familyDoc.data()
+                const updatedMembers = familyData.members.filter(uid => uid !== id)
+                await setDoc(doc(db, 'families', familyId), {
+                  ...familyData,
+                  members: updatedMembers
+                })
+              }
+              // Update removed member's familyId to null
+              const removedUserDoc = await getDoc(doc(db, 'users', id))
+              if (removedUserDoc.exists()) {
+                await setDoc(doc(db, 'users', id), {
+                  ...removedUserDoc.data(),
+                  familyId: null
+                })
+              }
+              // Update local state
+              setMembers(p => p.filter(m => m.id !== id))
+            } catch (err) {
+              console.error('Error removing member:', err)
+              alert('Failed to remove member. Please try again.')
+            }
+          }}
           onJoinFamily={() => setScreen('join')}
           onLogout={async () => {
             await signOut(auth)
